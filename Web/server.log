@@ -1,0 +1,52 @@
+2025-08-11 08:38:57,227 INFO === app start ===
+2025-08-11 08:38:57,229 INFO template_folder = C:\Apache24\htdocs\apps\whisper_api\templates
+2025-08-11 08:39:10,867 INFO Loading Whisper model size=small device=cpu compute=int8
+2025-08-11 08:39:12,531 INFO Model loaded
+2025-08-11 13:32:05,980 INFO === app start ===
+2025-08-11 13:32:05,983 INFO template_folder = C:\Apache24\htdocs\apps\whisper_api\templates
+2025-08-11 13:32:34,704 INFO [WORKER] start sid=f74494d6dcba6710f72ab183d52619ef
+2025-08-11 13:32:34,704 INFO [START] sid=f74494d6dcba6710f72ab183d52619ef lang=None
+2025-08-11 13:32:34,715 INFO [STREAM] open sid=f74494d6dcba6710f72ab183d52619ef subs=1
+2025-08-11 13:32:35,801 INFO [FF] spawn: ffmpeg -hide_banner -nostdin -loglevel error -f webm -i - -ac 1 -ar 16000 -f s16le -
+2025-08-11 13:32:36,378 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=15618 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:36,796 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:37,822 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:37,830 INFO Loading Whisper model size=small device=cpu compute=int8
+2025-08-11 13:32:38,840 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:39,862 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:40,134 INFO Model loaded
+2025-08-11 13:32:40,881 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:41,911 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:42,145 DEBUG [WORKER] sid=f74494d6dcba6710f72ab183d52619ef confirmed=0.94s segs=0 len=0
+2025-08-11 13:32:42,929 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:43,951 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:44,046 DEBUG [WORKER] sid=f74494d6dcba6710f72ab183d52619ef confirmed=5.04s segs=0 len=0
+2025-08-11 13:32:44,970 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:45,991 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:47,011 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:47,016 DEBUG [WORKER] sid=f74494d6dcba6710f72ab183d52619ef confirmed=7.09s segs=14 len=16
+2025-08-11 13:32:48,040 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:49,061 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:49,895 DEBUG [WORKER] sid=f74494d6dcba6710f72ab183d52619ef confirmed=10.16s segs=14 len=30
+2025-08-11 13:32:50,081 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:51,102 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:52,120 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:52,838 DEBUG [WORKER] sid=f74494d6dcba6710f72ab183d52619ef confirmed=12.21s segs=14 len=31
+2025-08-11 13:32:53,140 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:54,171 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:55,190 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:56,211 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:57,231 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:57,790 DEBUG [WORKER] sid=f74494d6dcba6710f72ab183d52619ef confirmed=17.20s segs=14 len=48
+2025-08-11 13:32:58,250 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:32:59,271 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:33:00,299 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:33:01,320 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:33:02,340 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:33:03,361 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:33:04,380 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=16422 mtype=audio/webm;codecs=opus
+2025-08-11 13:33:04,912 DEBUG [PUSH] sid=f74494d6dcba6710f72ab183d52619ef in_bytes=8709 mtype=audio/webm;codecs=opus
+2025-08-11 13:33:27,808 INFO [STREAM] close sid=f74494d6dcba6710f72ab183d52619ef subs=0
+2025-08-11 13:40:03,342 INFO Loading Whisper model size=small device=cpu compute=int8
+2025-08-11 13:40:05,343 INFO Model loaded
+2025-08-11 13:40:55,194 INFO [TRANSCRIBE] ok lang=ja dur=12.18s len=27

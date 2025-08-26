@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8"/>
+        <title>Whisper Local</title>
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 16px}
+.card{border:1px solid #ddd;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px}
+button{padding:10px 16px;border-radius:8px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer}
+pre{white-space:pre-wrap}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+input[type=file]{max-width:400px}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef;border:1px solid #ccd;margin-left:6px}
+</style>
+</head>
+<body>
+<h1>Whisper ローカル文字起こし</h1>
+
+<div class="card">
+  <h2>ファイル文字起こし</h2>
+  <form id="f" method="POST" action="/transcribe" enctype="multipart/form-data" class="row">
+    <input type="file" name="audio" accept="audio/*,video/*" required />
+    <select name="language">
+      <option value="">自動判定</option><option value="ja">日本語</option><option value="en">English</option>
+    </select>
+    <button>送信</button>
+  </form>
+  <pre id="out"></pre>
+</div>
+
+<div class="card">
+  <h2>リアルタイム（ブラウザのマイク）<span id="rtstate" class="badge">停止中</span></h2>
+  <div class="row">
+    <button id="start">開始</button>
+    <button id="stop" disabled>停止</button>
+    <label>言語:
+      <select id="rtlang">
+        <option value="">自動</option><option value="ja">日本語</option><option value="en">English</option>
+      </select>
+    </label>
+  </div>
+  <pre id="live"></pre>
+</div>
+<label>マイク:
+  <select id="mic"></select>
+</label>
+<label><input type="checkbox" id="procOff" checked> AGC/ノイズ抑制を無効</label>
+
+<script>
+const live = document.getElementById('live');
+const startBtn = document.getElementById('start');
+const stopBtn  = document.getElementById('stop');
+const badge = document.getElementById('rtstate');
+const langSel = document.getElementById('rtlang');
+const micSel  = document.getElementById('mic');
+const procOff = document.getElementById('procOff');
+
+let media=null, rec=null, sid=null, evtSource=null;
+
+function setState(on){ startBtn.disabled=on; stopBtn.disabled=!on; badge.textContent = on?'録音中':'停止中'; }
+
+// マイク一覧
+async function listMics(){
+  try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){}
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  const mics = devs.filter(d=>d.kind==='audioinput');
+  micSel.innerHTML = '';
+  for (const d of mics){
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `(未ラベル) ${d.deviceId}`;
+    micSel.appendChild(opt);
+  }
+}
+listMics();
+
+function pickMime(){
+  const cands = ['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/webm','audio/ogg','audio/mp4'];
+  for (const m of cands){ if (MediaRecorder.isTypeSupported?.(m)) return m; }
+  return '';
+}
+
+async function start(){
+  try{
+    setState(true);
+    live.textContent = '初期化中…';
+
+    // 1) セッション開始
+    const rs = await fetch('/rt/start',{method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ language: langSel.value || null })});
+    if(!rs.ok) throw new Error(`/rt/start 失敗: ${rs.status} ${await rs.text()}`);
+    ({sid} = await rs.json());
+    if(!sid) throw new Error('sidなし');
+
+    // 2) SSE
+    evtSource = new EventSource('/rt/stream?sid='+encodeURIComponent(sid));
+    evtSource.onmessage = (e)=>{ const d = JSON.parse(e.data); live.textContent = d.text || ''; };
+    evtSource.onerror = (e)=>{ console.warn('SSE error', e); };
+
+    // 3) マイク取得（選択＋加工オフ＋1ch）
+    const wantId = micSel.value || undefined;
+    const off = procOff.checked;
+    const constraints = {
+      audio: {
+        deviceId: wantId ? { exact: wantId } : undefined,
+        channelCount: 1,
+        sampleRate: 48000,
+        echoCancellation: off ? false : undefined,
+        noiseSuppression: off ? false : undefined,
+        autoGainControl: off ? false : undefined
+      }
+    };
+    media = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // 実際に掴んだマイクと設定を表示
+    const track = media.getAudioTracks()[0];
+    const s = track.getSettings?.() || {};
+    console.log('Using mic:', track.label, s);
+    live.textContent = `録音開始: ${track.label || '(ラベル無し)'} / sr=${s.sampleRate||'?'} ch=${s.channelCount||'?'}`;
+
+    // 4) MediaRecorder
+    const mime = pickMime();
+    try{ rec = mime ? new MediaRecorder(media,{mimeType:mime}) : new MediaRecorder(media); }
+    catch(e){ console.warn('mime失敗→既定', e); rec = new MediaRecorder(media); }
+
+    rec.ondataavailable = async ev => {
+      if (ev.data && ev.data.size>0){
+        const fd = new FormData();
+        fd.append('sid', sid);
+        fd.append('chunk', ev.data, 'chunk');       // 拡張子不要
+        fd.append('mtype', ev.data.type || mime);   // 実際のMIME
+        const r = await fetch('/rt/push',{method:'POST',body:fd});
+        if(!r.ok){ live.textContent = `[push ${r.status}] ${await r.text()}`; }
+      }
+    };
+
+    rec.start(1000); // 必要なら 500 に
+  }catch(err){
+    console.error(err);
+    live.textContent = '[start エラー] ' + err.message;
+    setState(false);
+  }
+}
+
+async function stop(){
+  try { rec && rec.state!=='inactive' && rec.stop(); } catch(e){}
+  try { media && media.getTracks().forEach(t=>t.stop()); } catch(e){}
+  try { evtSource && evtSource.close(); } catch(e){}
+  if (sid){
+    try{ await fetch('/rt/stop',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({sid})}); }catch(e){}
+  }
+  media=null; rec=null; evtSource=null; sid=null;
+  setState(false);
+}
+
+startBtn.onclick = start;
+stopBtn.onclick  = stop;
+
+// ページ離脱時の片付け
+window.addEventListener('beforeunload', ()=>{
+  if (sid) navigator.sendBeacon('/rt/stop', new Blob([JSON.stringify({sid})],{type:'application/json'}));
+});
+</script>
+
+</body></html>

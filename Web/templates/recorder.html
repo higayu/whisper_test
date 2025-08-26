@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<title>ローカル録音テスト（ダウンロード可）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 16px}
+.card{border:1px solid #ddd;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px}
+h1{margin:0 0 12px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+button{padding:10px 16px;border-radius:8px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef;border:1px solid #ccd;margin-left:6px}
+#meter{width:100%;height:50px;background:#f9f9f9;border:1px solid #ddd;border-radius:8px}
+small{color:#666}
+pre{white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:8px;border-radius:8px}
+a.btn{display:inline-block;padding:10px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>ローカル録音テスト <span id="state" class="badge">待機中</span></h1>
+
+<div class="card">
+  <div class="row">
+    <button id="start">録音開始</button>
+    <button id="stop" disabled>停止</button>
+    <label>形式:
+      <select id="mime"></select>
+    </label>
+    <small id="hint"></small>
+  </div>
+  <canvas id="meter"></canvas>
+  <div id="info"></div>
+  <div class="row" id="actions" style="margin-top:12px;display:none;">
+    <a id="dlRaw" class="btn" download="recording.webm">生データをダウンロード</a>
+    <a id="dlWav" class="btn" download="recording-16k.wav">WAV(16kHz/mono)をダウンロード</a>
+  </div>
+  <audio id="player" controls style="width:100%;margin-top:12px;display:none;"></audio>
+  <pre id="log"></pre>
+</div>
+
+<div class="card">
+  <h3>使い方</h3>
+  <ol>
+    <li>「録音開始」→ 話す →「停止」</li>
+    <li>下のリンクから <b>生データ</b> または <b>WAV(16k)</b> を保存</li>
+    <li>生データ再生で音量やノイズを確認。必要ならOSのマイク音量も調整</li>
+  </ol>
+  <p><a href="/">← 文字起こしページへ戻る</a></p>
+</div>
+<label>マイク:
+  <select id="mic"></select>
+</label>
+<label><input type="checkbox" id="procOff" checked> AGC/ノイズ抑制を無効</label>
+
+<script>
+const startBtn = document.getElementById('start');
+const stopBtn  = document.getElementById('stop');
+const stateEl  = document.getElementById('state');
+const mimeSel  = document.getElementById('mime');
+const hint     = document.getElementById('hint');
+const meter    = document.getElementById('meter');
+const info     = document.getElementById('info');
+const actions  = document.getElementById('actions');
+const dlRaw    = document.getElementById('dlRaw');
+const dlWav    = document.getElementById('dlWav');
+const player   = document.getElementById('player');
+const logEl    = document.getElementById('log');
+const micSel   = document.getElementById('mic');
+const procOff  = document.getElementById('procOff');
+
+let media=null, rec=null, chunks=[], mimePicked='', audioCtx=null, analyser=null, rafId=null;
+
+function log(msg){ logEl.textContent = (logEl.textContent + msg + "\n").slice(-4000); }
+function setState(s){ stateEl.textContent=s; startBtn.disabled=(s==='録音中'); stopBtn.disabled=(s!=='録音中'); }
+
+// --- 形式候補 ---
+function pickMimes(){
+  const cands = ['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/webm','audio/ogg','audio/mp4'];
+  mimeSel.innerHTML = '';
+  let first = '';
+  for (const m of cands){
+    if (!window.MediaRecorder) break;
+    if (!MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(m)){
+      const opt = document.createElement('option'); opt.value=m; opt.textContent=m;
+      mimeSel.appendChild(opt); if (!first) first=m;
+    }
+  }
+  if (!first){
+    const opt = document.createElement('option'); opt.value=''; opt.textContent='(ブラウザ既定)';
+    mimeSel.appendChild(opt);
+  }
+  mimePicked = first || '';
+  mimeSel.value = mimePicked;
+  mimeSel.onchange = ()=>{ mimePicked = mimeSel.value; };
+  hint.textContent = '推奨: webm/opus か ogg/opus';
+}
+pickMimes();
+
+// --- マイク一覧 ---
+async function listMics(){
+  try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){}
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  const mics = devs.filter(d=>d.kind==='audioinput');
+  micSel.innerHTML = '';
+  for (const d of mics){
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `(未ラベル) ${d.deviceId}`;
+    micSel.appendChild(opt);
+  }
+}
+listMics();
+
+// --- メーター描画 ---
+function drawMeter(){
+  if (!analyser) return;
+  const g = meter.getContext('2d');
+  meter.width = meter.clientWidth; meter.height = meter.clientHeight;
+  const W = meter.width, H = meter.height;
+  const buf = new Uint8Array(analyser.fftSize);
+  function frame(){
+    analyser.getByteTimeDomainData(buf);
+    g.clearRect(0,0,W,H);
+    g.beginPath();
+    const mid = H/2;
+    for (let x=0; x<W; x++){
+      const i = Math.floor(x * buf.length / W);
+      const v = buf[i]/128 - 1.0; // -1..+1
+      const y = mid + v * (H*0.45);
+      if (x===0) g.moveTo(x,y); else g.lineTo(x,y);
+    }
+    g.stroke();
+    rafId = requestAnimationFrame(frame);
+  }
+  rafId = requestAnimationFrame(frame);
+}
+
+// --- 録音開始 ---
+async function start(){
+  try{
+    if(!('MediaRecorder' in window)) throw new Error('このブラウザは MediaRecorder をサポートしていません');
+
+    // 選択マイク + 加工OFF + 1ch固定
+    const wantId = micSel.value || undefined;
+    const off = procOff.checked;
+    const constraints = {
+      audio: {
+        deviceId: wantId ? { exact: wantId } : undefined,
+        channelCount: 1,
+        sampleRate: 48000,
+        echoCancellation: off ? false : undefined,
+        noiseSuppression: off ? false : undefined,
+        autoGainControl: off ? false : undefined
+      }
+    };
+    media = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // メーター
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    const src = audioCtx.createMediaStreamSource(media);
+    src.connect(analyser);
+    drawMeter();
+
+    // レコーダ
+    chunks = [];
+    let mr;
+    try{
+      mr = mimePicked ? new MediaRecorder(media, {mimeType: mimePicked}) : new MediaRecorder(media);
+    }catch(e){
+      log('指定mime失敗: '+e+' → 既定で再試行');
+      mr = new MediaRecorder(media);
+    }
+    rec = mr;
+    rec.ondataavailable = e => { if (e.data && e.data.size>0) chunks.push(e.data); };
+    rec.onstart = ()=> log('[rec] start '+(rec.mimeType||'(auto)'));
+    rec.onstop  = ()=> log('[rec] stop totalChunks='+chunks.length);
+    rec.start(1000);
+
+    // 情報
+    const track = media.getAudioTracks()[0];
+    const s = track.getSettings?.() || {};
+    info.innerHTML = `マイク: <b>${track.label||'(ラベル無し)'}</b> / sr=${s.sampleRate||'?'} ch=${s.channelCount||'?'}`;
+    player.style.display='none';
+    actions.style.display='none';
+    setState('録音中');
+  }catch(err){
+    alert(err.message);
+    log('start error: '+err);
+  }
+}
+
+// --- 停止＆ダウンロード準備 ---
+async function stop(){
+  try{ rec && rec.state!=='inactive' && rec.stop(); }catch(e){}
+  try{ media && media.getTracks().forEach(t=>t.stop()); }catch(e){}
+  try{ audioCtx && audioCtx.close(); }catch(e){}
+  if (rafId) cancelAnimationFrame(rafId);
+  analyser=null; audioCtx=null; rafId=null;
+
+  setState('停止中');
+
+  // Blob 化
+  const mime = (rec && rec.mimeType) || mimePicked || 'audio/webm';
+  const blob = new Blob(chunks, {type:mime});
+  const url  = URL.createObjectURL(blob);
+  player.src = url; player.style.display='block';
+  dlRaw.href = url;
+  if (mime.includes('ogg')) dlRaw.download='recording.ogg';
+  else if (mime.includes('mp4') || mime.includes('mpeg')) dlRaw.download='recording.m4a';
+  else dlRaw.download='recording.webm';
+
+  const sizeMB = (blob.size/1024/1024).toFixed(2);
+  info.innerHTML += ` / 形式: <b>${mime}</b> / サイズ: <b>${sizeMB} MB</b>`;
+
+  // WAV(16k/mono)へ変換（左ch優先でモノ化→位相打ち消し回避）
+  try{
+    const wavBlob = await toWav16kMono(blob);
+    const wavUrl  = URL.createObjectURL(wavBlob);
+    dlWav.href = wavUrl; dlWav.download = 'recording-16k.wav';
+    actions.style.display='flex';
+    log('[conv] WAV 16k mono size='+(wavBlob.size/1024/1024).toFixed(2)+'MB');
+  }catch(e){
+    log('WAV変換失敗: '+e);
+    actions.style.display='inline-block';
+    dlWav.style.display='none';
+  }
+}
+
+// --- 16k/mono WAV をブラウザ内で生成 ---
+async function toWav16kMono(inputBlob){
+  const srcBuf = await inputBlob.arrayBuffer();
+  const actx = new (window.AudioContext || window.webkitAudioContext)();
+  const audioBuffer = await actx.decodeAudioData(srcBuf.slice(0));
+  const duration = audioBuffer.duration;
+  const targetRate = 16000;
+
+  // 左チャンネルのみ採用（右にしたい場合は index=1）
+  const off = new OfflineAudioContext(1, Math.ceil(duration*targetRate), targetRate);
+  const src = off.createBufferSource();
+  let mono;
+  if (audioBuffer.numberOfChannels === 1){
+    mono = audioBuffer;
+  }else{
+    const ch0 = audioBuffer.getChannelData(0);
+    mono = off.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate);
+    mono.getChannelData(0).set(ch0);
+  }
+  src.buffer = mono;
+  src.connect(off.destination);
+  src.start(0);
+  const rendered = await off.startRendering(); // 16k/mono
+
+  const wav = encodeWav(rendered);
+  actx.close();
+  return new Blob([wav], {type:'audio/wav'});
+}
+
+// --- WAV エンコード（16bit PCM） ---
+function encodeWav(abuf){
+  const numCh = abuf.numberOfChannels; // 1
+  const sampleRate = abuf.sampleRate;  // 16000
+  const samples = abuf.getChannelData(0);
+  const bytesPerSample = 2;
+  const blockAlign = numCh * bytesPerSample;
+  const dataSize = samples.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  writeStr(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(view, 8, 'WAVE');
+  writeStr(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numCh, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 8 * bytesPerSample, true);
+  writeStr(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i=0;i<samples.length;i++){
+    let s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s<0 ? s*0x8000 : s*0x7FFF, true);
+    offset += 2;
+  }
+  return buffer;
+
+  function writeStr(dv, offset, str){
+    for (let i=0;i<str.length;i++) dv.setUint8(offset+i, str.charCodeAt(i));
+  }
+}
+
+// ハンドラ登録
+startBtn.onclick = start;
+stopBtn.onclick  = stop;
+
+// ページ離脱時の片付け
+window.addEventListener('beforeunload', ()=>{
+  try{ rec && rec.state!=='inactive' && rec.stop(); }catch(e){}
+  try{ media && media.getTracks().forEach(t=>t.stop()); }catch(e){}
+});
+</script>
+
+
+</body>
+</html>

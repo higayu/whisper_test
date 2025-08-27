@@ -17,6 +17,8 @@ pip install python-multipart
 ### 実行する時のコマンド
 ```bash
 uvicorn Whisper_Server:app --host 0.0.0.0 --port 8000
+
+& C:/Users/Higashiyama/Documents/_python/whisper_test/venv/Scripts/Activate.ps1
 ```
 
 ---

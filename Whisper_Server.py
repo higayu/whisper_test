@@ -1,4 +1,4 @@
-# server.py
+# Whisper_Server.py 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel

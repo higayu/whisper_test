@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Request
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from faster_whisper import WhisperModel
@@ -26,8 +26,13 @@ async def transcribe(file: UploadFile = File(...)):
     with open(tmp_path, "wb") as f:
         f.write(await file.read())
 
-    # Whisper で文字起こし
-    segments, info = model.transcribe(tmp_path, vad_filter=True, beam_size=1)
+    # Whisper で文字起こし（言語を日本語 "ja" に固定）
+    segments, info = model.transcribe(
+        tmp_path,
+        vad_filter=True,
+        beam_size=1,
+        language="ja"   # ← 日本語に固定
+    )
     segments = list(segments)
 
     text = "".join([seg.text for seg in segments])
@@ -39,7 +44,7 @@ async def transcribe(file: UploadFile = File(...)):
     os.remove(tmp_path)
 
     return JSONResponse(content={
-        "language": info.language,
+        "language": info.language,  # ← ここも "ja" になる
         "text": text,
         "segments": seg_list
     })

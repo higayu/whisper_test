@@ -1,34 +1,24 @@
-from fastapi import FastAPI, File, UploadFile, Request
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+# Whisper_Server.py 
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
 import tempfile, os
 
 app = FastAPI()
 
-# 📌 静的ファイルとテンプレートの設定
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
 # モデルをあらかじめロード
 model = WhisperModel("small", device="cpu", compute_type="int8")
 
-# ルートに HTML を表示
-@app.get("/")
-async def root(request: Request):
-    return templates.TemplateResponse("whisper.html", {"request": request})
-
-# 音声アップロード & 文字起こし
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
+    # 一時ファイルに保存
     tmp_path = tempfile.mktemp(suffix=".wav")
     with open(tmp_path, "wb") as f:
         f.write(await file.read())
 
-    # Whisper で文字起こし
+    # 文字起こし（1回だけ呼ぶ）
     segments, info = model.transcribe(tmp_path, vad_filter=True, beam_size=1)
-    segments = list(segments)
+    segments = list(segments)  # ★ここでジェネレーターをリスト化
 
     text = "".join([seg.text for seg in segments])
     seg_list = [
@@ -36,10 +26,13 @@ async def transcribe(file: UploadFile = File(...)):
         for i, seg in enumerate(segments)
     ]
 
-    os.remove(tmp_path)
 
+    os.remove(tmp_path)
     return JSONResponse(content={
         "language": info.language,
         "text": text,
         "segments": seg_list
     })
+
+# 起動:
+# uvicorn server:app --host 0.0.0.0 --port 8000

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Whisper Transcriber</title>
+    <script src="/static/script.js" defer></script>
+</head>
+<body>
+    <h1>Whisper 文字起こし</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="file" id="fileInput" accept="audio/*">
+        <button type="submit">アップロードして文字起こし</button>
+    </form>
+
+    <h2>結果</h2>
+    <pre id="result"></pre>
+</body>
+</html>

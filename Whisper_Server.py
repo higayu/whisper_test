@@ -48,3 +48,30 @@ async def transcribe(file: UploadFile = File(...)):
         "text": text,
         "segments": seg_list
     })
+
+# ✅ 長時間音声用（tk_whisper_app.py の処理を API 化）
+@app.post("/transcribe_long")
+async def transcribe_long(file: UploadFile = File(...)):
+    tmp_path = tempfile.mktemp(suffix=".wav")
+    with open(tmp_path, "wb") as f:
+        f.write(await file.read())
+
+    try:
+        # beam_size を大きくして精度重視
+        segments, info = model.transcribe(tmp_path, beam_size=5,language="ja")
+        segments = list(segments)
+
+        text = "".join([seg.text for seg in segments])
+        seg_list = [
+            {"id": i, "start": seg.start, "end": seg.end, "text": seg.text}
+            for i, seg in enumerate(segments)
+        ]
+
+        return JSONResponse(content={
+            "language": info.language,
+            "text": text,
+            "segments": seg_list
+        })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)

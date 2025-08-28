@@ -13,7 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("file", fileInput.files[0]);
 
         try {
-            const res = await fetch("/transcribe", {
+            const res = await fetch("/transcribe_long", {
                 method: "POST",
                 body: formData
             });

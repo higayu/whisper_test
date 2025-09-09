@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Request
+from fastapi import FastAPI, File, UploadFile, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -7,66 +7,74 @@ import tempfile, os
 
 app = FastAPI()
 
-# 📌 静的ファイルとテンプレートの設定
+# 静的ファイルとテンプレート
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# モデルをあらかじめロード
+# モデルをロード（CPU int8）
 model = WhisperModel("small", device="cpu", compute_type="int8")
 
-# ルートに HTML を表示
 @app.get("/")
 async def root(request: Request):
     return templates.TemplateResponse("whisper.html", {"request": request})
 
-# 音声アップロード & 文字起こし
+def _save_upload_to_temp(upload: UploadFile) -> str:
+    """UploadFile を安全に一時ファイルへ保存してパスを返す"""
+    fd, path = tempfile.mkstemp(suffix=".wav")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            # まとめて読む（アップロードが大きいなら分割読み書きに変更可）
+            f.write(upload.file.read() if hasattr(upload.file, "read") else b"")
+    except Exception:
+        # 失敗時はファイルを消してから再送出
+        try:
+            os.remove(path)
+        finally:
+            pass
+        raise
+    return path
+
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
-    tmp_path = tempfile.mktemp(suffix=".wav")
-    with open(tmp_path, "wb") as f:
-        f.write(await file.read())
-
-    # Whisper で文字起こし（言語を日本語 "ja" に固定）
-    segments, info = model.transcribe(
-        tmp_path,
-        vad_filter=True,
-        beam_size=1,
-        language="ja"   # ← 日本語に固定
-    )
-    segments = list(segments)
-
-    text = "".join([seg.text for seg in segments])
-    seg_list = [
-        {"id": i, "start": seg.start, "end": seg.end, "text": seg.text}
-        for i, seg in enumerate(segments)
-    ]
-
-    os.remove(tmp_path)
-
-    return JSONResponse(content={
-        "language": info.language,  # ← ここも "ja" になる
-        "text": text,
-        "segments": seg_list
-    })
-
-# ✅ 長時間音声用（tk_whisper_app.py の処理を API 化）
-@app.post("/transcribe_long")
-async def transcribe_long(file: UploadFile = File(...)):
-    tmp_path = tempfile.mktemp(suffix=".wav")
-    with open(tmp_path, "wb") as f:
-        f.write(await file.read())
-
+    if not file:
+        raise HTTPException(status_code=400, detail="file がありません")
+    tmp_path = _save_upload_to_temp(file)
     try:
-        # beam_size を大きくして精度重視
-        segments, info = model.transcribe(tmp_path, beam_size=5,language="ja")
+        segments, info = model.transcribe(
+            tmp_path,
+            vad_filter=True,
+            beam_size=1,
+            language="ja"  # 日本語に固定
+        )
         segments = list(segments)
-
-        text = "".join([seg.text for seg in segments])
+        text = "".join(seg.text for seg in segments)
         seg_list = [
             {"id": i, "start": seg.start, "end": seg.end, "text": seg.text}
             for i, seg in enumerate(segments)
         ]
+        return JSONResponse(content={
+            "language": info.language,  # 言語固定でもここは "ja" が返る想定
+            "text": text,
+            "segments": seg_list
+        })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
+@app.post("/transcribe_long")
+async def transcribe_long(file: UploadFile = File(...)):
+    if not file:
+        raise HTTPException(status_code=400, detail="file がありません")
+    tmp_path = _save_upload_to_temp(file)
+    try:
+        # 精度重視（重くなるので同時実行を増やしすぎない）
+        segments, info = model.transcribe(tmp_path, beam_size=5, language="ja")
+        segments = list(segments)
+        text = "".join(seg.text for seg in segments)
+        seg_list = [
+            {"id": i, "start": seg.start, "end": seg.end, "text": seg.text}
+            for i, seg in enumerate(segments)
+        ]
         return JSONResponse(content={
             "language": info.language,
             "text": text,

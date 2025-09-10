@@ -66,17 +66,10 @@ async def _save_to_temp(src: UploadFile) -> str:
 
 
 # ---- ffmpeg コマンドを組み立て ----
-def _build_ffmpeg_cmd(
-    input_path: str,
-    output_path: str,
-    out_fmt: str,
-    ar: Optional[int],
-    ac: Optional[int],
-    ab: Optional[str],
-) -> List[str]:
-    out_fmt = out_fmt.lower()
-    args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", input_path]
-
+def _build_ffmpeg_cmd(input_path, output_path, out_fmt, ar, ac, ab):
+    ffmpeg_bin = "/usr/bin/ffmpeg"   # ← フルパス指定
+    args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y", "-i", input_path]
+    
     # サンプルレート／チャンネル
     if ar:
         args += ["-ar", str(ar)]

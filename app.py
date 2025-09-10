@@ -1,51 +1,93 @@
+# app.py
+import os
+import asyncio
+import tempfile
+from typing import Optional
+
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from faster_whisper import WhisperModel
-import tempfile, os
+
+# ---- ここではモデルを作らない（Noneにしておく） ----
+model = None                    # type: Optional["WhisperModel"]
+model_ready = False
+sem = asyncio.Semaphore(1)      # 同時実行を制限（CPU版は1~2推奨）
 
 app = FastAPI()
 
-# 静的ファイルとテンプレート
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
-# モデルをロード（CPU int8）
-model = WhisperModel("small", device="cpu", compute_type="int8")
+# 静的/テンプレート（ディレクトリが存在することを確認）
+if os.path.isdir("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates") if os.path.isdir("templates") else None
 
 @app.get("/")
 async def root(request: Request):
-    return templates.TemplateResponse("whisper.html", {"request": request})
+    if templates is None:
+        return {"service": "whisper-api", "ready": model_ready}
+    return templates.TemplateResponse("whisper.html", {"request": request, "ready": model_ready})
 
-def _save_upload_to_temp(upload: UploadFile) -> str:
-    """UploadFile を安全に一時ファイルへ保存してパスを返す"""
+@app.get("/health")
+async def health():
+    return {"status": "ok" if model_ready else "starting"}
+
+# ---- 重い初期化はバックグラウンドで ----
+def _load_model_sync():
+    # heavy import は関数内で行う（起動時importを避ける）
+    from faster_whisper import WhisperModel
+    # 例: CPU int8
+    return WhisperModel("small", device="cpu", compute_type="int8")
+
+async def _load_model_task():
+    global model, model_ready
+    # 同期処理をスレッドプールに逃がす
+    model = await asyncio.to_thread(_load_model_sync)
+    model_ready = True
+
+@app.on_event("startup")
+async def on_startup():
+    # 起動ブロックしないようにタスク化
+    asyncio.create_task(_load_model_task())
+
+# ---- アップロードを一時ファイルへ保存（非同期で少しずつ） ----
+async def _save_upload_to_temp(upload: UploadFile) -> str:
     fd, path = tempfile.mkstemp(suffix=".wav")
     try:
         with os.fdopen(fd, "wb") as f:
-            # まとめて読む（アップロードが大きいなら分割読み書きに変更可）
-            f.write(upload.file.read() if hasattr(upload.file, "read") else b"")
+            while True:
+                chunk = await upload.read(1024 * 1024)  # 1MBずつ
+                if not chunk:
+                    break
+                f.write(chunk)
     except Exception:
-        # 失敗時はファイルを消してから再送出
         try:
             os.remove(path)
         finally:
             pass
         raise
+    finally:
+        await upload.close()
     return path
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     if not file:
         raise HTTPException(status_code=400, detail="file がありません")
-    tmp_path = _save_upload_to_temp(file)
+    if not model_ready:
+        # 起動直後はまだロード中の可能性
+        raise HTTPException(status_code=503, detail="model is loading")
+
+    tmp_path = await _save_upload_to_temp(file)
     try:
-        segments, info = model.transcribe(
-            tmp_path,
-            vad_filter=True,
-            beam_size=1,
-            language="ja"  # 日本語に固定
-        )
+        async with sem:  # 同時実行を制限
+            # CPUだとVAD有りは少し重い。必要に応じてfalse/beam_size調整
+            segments, info = await asyncio.to_thread(
+                model.transcribe,
+                tmp_path,
+                vad_filter=True,
+                beam_size=1,
+                language="ja"
+            )
         segments = list(segments)
         text = "".join(seg.text for seg in segments)
         seg_list = [
@@ -53,7 +95,7 @@ async def transcribe(file: UploadFile = File(...)):
             for i, seg in enumerate(segments)
         ]
         return JSONResponse(content={
-            "language": info.language,  # 言語固定でもここは "ja" が返る想定
+            "language": info.language,
             "text": text,
             "segments": seg_list
         })
@@ -65,10 +107,18 @@ async def transcribe(file: UploadFile = File(...)):
 async def transcribe_long(file: UploadFile = File(...)):
     if not file:
         raise HTTPException(status_code=400, detail="file がありません")
-    tmp_path = _save_upload_to_temp(file)
+    if not model_ready:
+        raise HTTPException(status_code=503, detail="model is loading")
+
+    tmp_path = await _save_upload_to_temp(file)
     try:
-        # 精度重視（重くなるので同時実行を増やしすぎない）
-        segments, info = model.transcribe(tmp_path, beam_size=5, language="ja")
+        async with sem:
+            segments, info = await asyncio.to_thread(
+                model.transcribe,
+                tmp_path,
+                beam_size=5,
+                language="ja"
+            )
         segments = list(segments)
         text = "".join(seg.text for seg in segments)
         seg_list = [

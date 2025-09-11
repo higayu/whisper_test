@@ -51,7 +51,12 @@ async def on_startup():
 
 # ---- アップロードを一時ファイルへ保存（非同期で少しずつ） ----
 async def _save_upload_to_temp(upload: UploadFile) -> str:
-    fd, path = tempfile.mkstemp(suffix=".wav")
+    # アップロードファイルの拡張子を保持（例: .mp3, .wav）
+    import os
+    _, ext = os.path.splitext(upload.filename)
+    if not ext:
+        ext = ".wav"  # デフォルト
+    fd, path = tempfile.mkstemp(suffix=ext)
     try:
         with os.fdopen(fd, "wb") as f:
             while True:
@@ -59,15 +64,10 @@ async def _save_upload_to_temp(upload: UploadFile) -> str:
                 if not chunk:
                     break
                 f.write(chunk)
-    except Exception:
-        try:
-            os.remove(path)
-        finally:
-            pass
-        raise
     finally:
         await upload.close()
     return path
+
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):

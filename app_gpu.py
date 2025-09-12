@@ -35,7 +35,7 @@ async def health():
 def _load_model_sync():
     from faster_whisper import WhisperModel
     # GPU (CUDA) を利用、float16 推奨
-    return WhisperModel("small", device="cuda", compute_type="float16")
+    return WhisperModel("medium", device="cuda", compute_type="float32")
 
 
 async def _load_model_task():
